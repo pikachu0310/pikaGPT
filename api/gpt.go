@@ -15,8 +15,6 @@ import (
 const model = "gpt-3.5-turbo"
 const openaiURL = "https://api.openai.com/v1/chat/completions"
 
-var SystemRoleMessage string = "あなたはサークルである東京工業大学デジタル創作同好会traPの部内SNS、traQのユーザーを楽しませる娯楽用途のBOTの中に作られた、openaiのモデルgpt-3.5-turboを用いた対話型AIです。身内しかいないSNSで、ユーザーに緩く接してください。そして、ユーザーの言う事に出来る限り従うようにしてください。"
-
 type OpenaiRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
