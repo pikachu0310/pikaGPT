@@ -31,6 +31,7 @@ var (
 		Role:    "system",
 		Content: SystemRoleMessage,
 	}
+	DollToYen float32 = 132.54
 )
 
 func resetRequestContent() {
@@ -172,26 +173,16 @@ func GptDebug(SendOrEdit func(string)) {
 	var prices []float32
 	for _, r := range responses {
 		if strings.Contains(r.Model, "gpt-4") {
-			prices = append(prices, float32(r.Usage.PromptTokens)*(131.34/1000)*0.03+float32(r.Usage.CompletionTokens)*(131.34/1000)*0.06)
-			continue
+			prices = append(prices, float32(r.Usage.PromptTokens)*(DollToYen/1000)*0.03+float32(r.Usage.CompletionTokens)*(131.34/1000)*0.06)
 		} else if strings.Contains(r.Model, "gpt-3.5") {
-			prices = append(prices, float32(r.Usage.TotalTokens)*(131.34/1000)*0.002)
-			continue
+			prices = append(prices, float32(r.Usage.TotalTokens)*(DollToYen/1000)*0.002)
 		}
 	}
-	if len(responses) == 0 {
+	if len(responses) == 0 || len(prices) == 0 {
 		SendOrEdit("まだ会話がありません")
 		return
 	}
 	r := responses[len(responses)-1]
-	var price float32
-	if strings.Contains(r.Model, "gpt-4") {
-		price = float32(r.Usage.PromptTokens)*(131.34/1000)*0.03 + float32(r.Usage.CompletionTokens)*(131.34/1000)*0.06
-	} else if strings.Contains(r.Model, "gpt-3.5") {
-		price = float32(r.Usage.TotalTokens) * (131.34 / 1000) * 0.002
-	}
-
-	returnString += fmt.Sprintf("PromptTokens: %d\nCompletionTokens: %d\nTotalTokens: %d\n最後の一回で使った金額: %.2f円\n最後にリセットされてから使った合計金額:  %.2f円\n", r.Usage.PromptTokens, r.Usage.CompletionTokens, r.Usage.TotalTokens, price, Sum(prices))
-	returnString += "```"
+	returnString += fmt.Sprintf("PromptTokens: %d\nCompletionTokens: %d\nTotalTokens: %d\n最後の一回で使った金額: %.2f円\n最後にリセットされてから使った合計金額:  %.2f円\n```", r.Usage.PromptTokens, r.Usage.CompletionTokens, r.Usage.TotalTokens, prices[len(prices)-1], Sum(prices))
 	SendOrEdit(returnString)
 }
