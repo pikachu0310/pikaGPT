@@ -69,7 +69,7 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			return
 		}
 		if strings.Contains(m.Message.Content, "/gpt reset") || strings.Contains(m.Message.Content, "/gpt new") {
-			GptReset(s, m)
+			GptResetEditMessage(s, m, msg)
 		} else {
 			GptEditMessage(s, m, msg)
 		}
@@ -132,11 +132,10 @@ func GptReset(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 func GptResetEditMessage(s *discordgo.Session, m *discordgo.MessageCreate, message *discordgo.Message) {
-	requestContent = append(requestContent, m.Message.Content)
-	res, err := api.RequestOpenaiAPIByStrings(requestContent)
+	resetRequestContent()
+	res, err := api.RequestOpenaiApiByStringOneTime("ユーザーに向けて、<今までの会話履歴を削除し、リセットしました>という旨の文を返してください 謝る必要はありません ダブルクォーテーションも必要ありません")
 	if err != nil {
-		s.ChannelMessageEdit(m.ChannelID, message.ID, res.Text())
+		s.ChannelMessageEdit(m.ChannelID, message.ID, fmt.Sprintf("error: %v", err))
 	}
-	requestContent = append(requestContent, res.Text())
 	s.ChannelMessageEdit(m.ChannelID, message.ID, res.Text())
 }
