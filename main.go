@@ -88,49 +88,42 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			fmt.Println(err)
 			return
 		}
+		EditMessage := func(content string) {
+			s.ChannelMessageEdit(m.ChannelID, msg.ID, content)
+		}
 		if strings.Contains(m.Message.Content, "/gpt reset") || strings.Contains(m.Message.Content, "/gpt new") {
-			GptResetEditMessage(s, m, msg)
+			GptReset(EditMessage)
 		} else if strings.Contains(m.Message.Content, "/gpt debug") || strings.Contains(m.Message.Content, "/gptdebug") {
-			GptDebugEditMessage(s, m, msg)
+			GptDebug(EditMessage)
 		} else {
-			m.Message.Content = regexp.MustCompile("/gpt").ReplaceAllString(m.Message.Content, "")
-			GptEditMessage(s, m, msg)
+			Gpt(regexp.MustCompile("/gpt").ReplaceAllString(m.Message.Content, ""), EditMessage)
 		}
 	}
 }
 
-func Gpt(s *discordgo.Session, m *discordgo.MessageCreate) {
-	addRequestContent("user", m.Message.Content)
+func SendOrEditError(SendOrEdit func(string), err error) {
+	SendOrEdit(fmt.Sprintf("error: %v", err))
+}
+
+func Gpt(content string, SendOrEdit func(string)) {
+	addRequestContent("user", content)
 	res, err := api.RequestOpenaiApiByMessages(requestContent)
 	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("error: %v", err))
+		SendOrEditError(SendOrEdit, err)
+	}
+	res, err = GptDeleteLogsAndRetry(res, SendOrEdit)
+	if err != nil {
+		SendOrEditError(SendOrEdit, err)
 	}
 	addRequestContent("assistant", res.Text())
 	responses = append(responses, res)
-	s.ChannelMessageSend(m.ChannelID, res.Text())
+	SendOrEdit(res.Text())
 }
 
-func GptEditMessage(s *discordgo.Session, m *discordgo.MessageCreate, message *discordgo.Message) {
-	addRequestContent("user", m.Message.Content)
-	res, err := api.RequestOpenaiApiByMessages(requestContent)
-	if err != nil {
-		s.ChannelMessageEdit(m.ChannelID, message.ID, fmt.Sprintf("error: %v", err))
-	}
-	if res.OverTokenCheck() {
-		res, err = GptDeleteLogsAndRetry(s, m, res, message)
-		if err != nil {
-			s.ChannelMessageEdit(m.ChannelID, message.ID, fmt.Sprintf("error: %v", err))
-		}
-	}
-	addRequestContent("assistant", res.Text())
-	responses = append(responses, res)
-	s.ChannelMessageEdit(m.ChannelID, message.ID, res.Text())
-}
-
-func GptDeleteLogsAndRetry(s *discordgo.Session, m *discordgo.MessageCreate, res api.OpenaiResponse, message *discordgo.Message) (api.OpenaiResponse, error) {
+func GptDeleteLogsAndRetry(res api.OpenaiResponse, SendOrEdit func(string)) (api.OpenaiResponse, error) {
 	var err error
 	for i := 0; res.OverTokenCheck() && i <= 4; i++ {
-		s.ChannelMessageEdit(m.ChannelID, message.ID, "Clearing old history and retrying.["+fmt.Sprintf("%d", i+1)+"] :thinking:")
+		SendOrEdit("Clearing old history and retrying.[" + fmt.Sprintf("%d", i+1) + "] :thinking:")
 		if len(requestContent) >= 5 {
 			requestContent = requestContent[4:]
 			requestContent = append([]api.Message{firstMessage}, requestContent[4:]...)
@@ -141,29 +134,20 @@ func GptDeleteLogsAndRetry(s *discordgo.Session, m *discordgo.MessageCreate, res
 		}
 		res, err = api.RequestOpenaiApiByMessages(requestContent)
 		if err != nil {
-			s.ChannelMessageEdit(m.ChannelID, message.ID, "Error:"+fmt.Sprint(err))
+			SendOrEditError(SendOrEdit, err)
 		}
 	}
 	return res, err
 }
 
-func GptReset(s *discordgo.Session, m *discordgo.MessageCreate) {
+func GptReset(SendOrEdit func(string)) {
 	resetRequestContent()
-	resetResponses()
+	//resetResponses()
 	res, err := api.RequestOpenaiApiByStringOneTime(ResetMessage)
 	if err != nil {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("error: %v", err))
+		SendOrEditError(SendOrEdit, err)
 	}
-	s.ChannelMessageSend(m.ChannelID, res.Text())
-}
-
-func GptResetEditMessage(s *discordgo.Session, m *discordgo.MessageCreate, message *discordgo.Message) {
-	resetRequestContent()
-	res, err := api.RequestOpenaiApiByStringOneTime(ResetMessage)
-	if err != nil {
-		s.ChannelMessageEdit(m.ChannelID, message.ID, fmt.Sprintf("error: %v", err))
-	}
-	s.ChannelMessageEdit(m.ChannelID, message.ID, res.Text())
+	SendOrEdit(res.Text())
 }
 
 func Sum(arr []float32) float32 {
@@ -174,7 +158,7 @@ func Sum(arr []float32) float32 {
 	return res
 }
 
-func GptDebug(s *discordgo.Session, m *discordgo.MessageCreate) {
+func GptDebug(SendOrEdit func(string)) {
 	returnString := "```\n"
 	for _, message := range requestContent {
 		chatText := regexp.MustCompile("```").ReplaceAllString(message.Content, "")
@@ -196,7 +180,7 @@ func GptDebug(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 	if len(responses) == 0 {
-		s.ChannelMessageSend(m.ChannelID, "まだ会話がありません")
+		SendOrEdit("まだ会話がありません")
 		return
 	}
 	r := responses[len(responses)-1]
@@ -209,43 +193,5 @@ func GptDebug(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	returnString += fmt.Sprintf("PromptTokens: %d\nCompletionTokens: %d\nTotalTokens: %d\n最後の一回で使った金額: %.2f円\n最後にリセットされてから使った合計金額:  %.2f円\n", r.Usage.PromptTokens, r.Usage.CompletionTokens, r.Usage.TotalTokens, price, Sum(prices))
 	returnString += "```"
-	s.ChannelMessageSend(m.ChannelID, returnString)
-}
-
-func GptDebugEditMessage(s *discordgo.Session, m *discordgo.MessageCreate, message *discordgo.Message) {
-	returnString := "```\n"
-	for _, message := range requestContent {
-		chatText := regexp.MustCompile("```").ReplaceAllString(message.Content, "")
-		if len(chatText) >= 40 {
-			returnString += message.Role + ": " + chatText[:40] + "...\n"
-		} else {
-			returnString += message.Role + ": " + chatText + "\n"
-		}
-	}
-	returnString += "```\n```\n"
-	var prices []float32
-	for _, r := range responses {
-		if strings.Contains(r.Model, "gpt-4") {
-			prices = append(prices, float32(r.Usage.PromptTokens)*(131.34/1000)*0.03+float32(r.Usage.CompletionTokens)*(131.34/1000)*0.06)
-			continue
-		} else if strings.Contains(r.Model, "gpt-3.5") {
-			prices = append(prices, float32(r.Usage.TotalTokens)*(131.34/1000)*0.002)
-			continue
-		}
-	}
-	if len(responses) == 0 {
-		s.ChannelMessageEdit(m.ChannelID, message.ID, "まだ会話がありません")
-		return
-	}
-	r := responses[len(responses)-1]
-	var price float32
-	if strings.Contains(r.Model, "gpt-4") {
-		price = float32(r.Usage.PromptTokens)*(131.34/1000)*0.03 + float32(r.Usage.CompletionTokens)*(131.34/1000)*0.06
-	} else if strings.Contains(r.Model, "gpt-3.5") {
-		price = float32(r.Usage.TotalTokens) * (131.34 / 1000) * 0.002
-	}
-
-	returnString += fmt.Sprintf("PromptTokens: %d\nCompletionTokens: %d\nTotalTokens: %d\n最後の一回で使った金額: %.2f円\n最後にリセットされてから使った合計金額:  %.2f円\n", r.Usage.PromptTokens, r.Usage.CompletionTokens, r.Usage.TotalTokens, price, Sum(prices))
-	returnString += "```"
-	s.ChannelMessageEdit(m.ChannelID, message.ID, returnString)
+	SendOrEdit(returnString)
 }
