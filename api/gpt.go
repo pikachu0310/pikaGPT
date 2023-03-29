@@ -66,6 +66,16 @@ var (
 //var Messages []Message = make([]Message, 0)
 //var Responses []OpenaiResponse = make([]OpenaiResponse, 0)]
 
+func (res *OpenaiResponse) OverTokenCheck() bool {
+	if len(res.Choices) == 0 {
+		return true
+	}
+	if res.Choices[0].FinishReason == "length" {
+		return true
+	}
+	return false
+}
+
 func (res *OpenaiResponse) Text() string {
 	if len(res.Choices) == 0 {
 		return ""

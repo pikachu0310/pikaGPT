@@ -63,10 +63,15 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	if strings.Contains(m.Message.Content, "/gpt") {
-		if strings.Contains(m.Message.Content, "/gpt reset") {
+		msg, err := s.ChannelMessageSend(m.ChannelID, ":thinking:")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if strings.Contains(m.Message.Content, "/gpt reset") || strings.Contains(m.Message.Content, "/gpt new") {
 			GptReset(s, m)
 		} else {
-			Gpt(s, m)
+			GptEditMessage(s, m, msg)
 		}
 	}
 }
@@ -81,6 +86,42 @@ func Gpt(s *discordgo.Session, m *discordgo.MessageCreate) {
 	s.ChannelMessageSend(m.ChannelID, res.Text())
 }
 
+func GptEditMessage(s *discordgo.Session, m *discordgo.MessageCreate, message *discordgo.Message) {
+	requestContent = append(requestContent, m.Message.Content)
+	res, err := api.RequestOpenaiAPIByStrings(requestContent)
+	if err != nil {
+		s.ChannelMessageEdit(m.ChannelID, message.ID, fmt.Sprintf("error: %v", err))
+	}
+	if res.OverTokenCheck() {
+		res, err = GptDeleteLogsAndRetry(s, m, res, message)
+		if err != nil {
+			s.ChannelMessageEdit(m.ChannelID, message.ID, fmt.Sprintf("error: %v", err))
+		}
+	}
+	requestContent = append(requestContent, res.Text())
+	s.ChannelMessageEdit(m.ChannelID, message.ID, res.Text())
+}
+
+func GptDeleteLogsAndRetry(s *discordgo.Session, m *discordgo.MessageCreate, res api.OpenaiResponse, message *discordgo.Message) (api.OpenaiResponse, error) {
+	var err error
+	for i := 0; res.OverTokenCheck() && i <= 4; i++ {
+		s.ChannelMessageEdit(m.ChannelID, message.ID, "Clearing old history and retrying.["+fmt.Sprintf("%d", i+1)+"] :thinking:")
+		if len(requestContent) >= 5 {
+			requestContent = requestContent[4:]
+			requestContent = append([]string{SystemRoleMessage}, requestContent[4:]...)
+		} else if len(requestContent) >= 2 {
+			requestContent = append([]string{SystemRoleMessage}, requestContent[1:]...)
+		} else if len(requestContent) >= 1 {
+			requestContent = []string{SystemRoleMessage}
+		}
+		res, err = api.RequestOpenaiAPIByStrings(requestContent)
+		if err != nil {
+			s.ChannelMessageEdit(m.ChannelID, message.ID, "Error:"+fmt.Sprint(err))
+		}
+	}
+	return res, err
+}
+
 func GptReset(s *discordgo.Session, m *discordgo.MessageCreate) {
 	resetRequestContent()
 	res, err := api.RequestOpenaiApiByStringOneTime("ユーザーに向けて、<今までの会話履歴を削除し、リセットしました>という旨の文を返してください 謝る必要はありません ダブルクォーテーションも必要ありません")
@@ -88,4 +129,14 @@ func GptReset(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("error: %v", err))
 	}
 	s.ChannelMessageSend(m.ChannelID, res.Text())
+}
+
+func GptResetEditMessage(s *discordgo.Session, m *discordgo.MessageCreate, message *discordgo.Message) {
+	requestContent = append(requestContent, m.Message.Content)
+	res, err := api.RequestOpenaiAPIByStrings(requestContent)
+	if err != nil {
+		s.ChannelMessageEdit(m.ChannelID, message.ID, res.Text())
+	}
+	requestContent = append(requestContent, res.Text())
+	s.ChannelMessageEdit(m.ChannelID, message.ID, res.Text())
 }
