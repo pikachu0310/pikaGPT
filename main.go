@@ -106,19 +106,22 @@ func SendOrEditError(SendOrEdit func(string), err error) {
 	SendOrEdit(fmt.Sprintf("error: %v", err))
 }
 
-func Gpt(content string, SendOrEdit func(string)) {
+func Gpt(content string, SendOrEdit func(string)) (api.OpenaiResponse, error) {
 	addRequestContent("user", content)
 	res, err := api.RequestOpenaiApiByMessages(requestContent)
 	if err != nil {
 		SendOrEditError(SendOrEdit, err)
+		return res, err
 	}
 	res, err = GptDeleteLogsAndRetry(res, SendOrEdit)
 	if err != nil {
 		SendOrEditError(SendOrEdit, err)
+		return res, err
 	}
 	addRequestContent("assistant", res.Text())
 	responses = append(responses, res)
 	SendOrEdit(res.Text())
+	return res, err
 }
 
 func GptDeleteLogsAndRetry(res api.OpenaiResponse, SendOrEdit func(string)) (api.OpenaiResponse, error) {
@@ -141,14 +144,16 @@ func GptDeleteLogsAndRetry(res api.OpenaiResponse, SendOrEdit func(string)) (api
 	return res, err
 }
 
-func GptReset(SendOrEdit func(string)) {
+func GptReset(SendOrEdit func(string)) (api.OpenaiResponse, error) {
 	resetRequestContent()
 	//resetResponses()
 	res, err := api.RequestOpenaiApiByStringOneTime(ResetMessage)
 	if err != nil {
 		SendOrEditError(SendOrEdit, err)
+		return res, err
 	}
 	SendOrEdit(res.Text())
+	return res, err
 }
 
 func Sum(arr []float32) float32 {
